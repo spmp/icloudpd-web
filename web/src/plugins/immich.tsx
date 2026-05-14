@@ -277,7 +277,7 @@ function ImmichConfigSection({ values, onChange }: PluginSectionProps) {
       <FormControl>
         <FieldWithInfo
           label="Batch Log File"
-          info="Custom path for the batch recovery log file. Leave blank to use the default (~/.pyicloud/immich_pending_files.json)."
+          info="Custom path for the batch recovery log file. Leave blank to use the default (<cookie-directory>/immich_pending_files.json). Set an explicit path when running multiple policies with different Apple IDs to avoid log file conflicts."
         >
           <Input
             value={v.immich_batch_log_file}
