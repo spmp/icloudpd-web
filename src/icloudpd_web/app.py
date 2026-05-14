@@ -28,6 +28,7 @@ from icloudpd_web.store.secrets import SecretStore
 
 
 ICLOUDPD_BINARY = "icloudpd"
+DEFAULT_COOKIE_DIR = "/.pyicloud"
 
 
 @asynccontextmanager
@@ -42,8 +43,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await app.state.scheduler_task
 
 
-def _default_icloudpd_argv(argv_tail: list[str]) -> list[str]:
-    return [ICLOUDPD_BINARY, *argv_tail]
+def _make_icloudpd_argv(cookie_dir: str) -> Callable[[list[str]], list[str]]:
+    """Build an argv factory that injects --cookie-directory unless the policy already sets it."""
+    def _argv(argv_tail: list[str]) -> list[str]:
+        base = [ICLOUDPD_BINARY]
+        if "--cookie-directory" not in argv_tail:
+            base += ["--cookie-directory", cookie_dir]
+        return base + argv_tail
+    return _argv
 
 
 def create_app(
@@ -51,10 +58,14 @@ def create_app(
     data_dir: Path,
     authenticator: Authenticator,
     session_secret: str,
-    icloudpd_argv: Callable[[list[str]], list[str]] = _default_icloudpd_argv,
+    cookie_dir: str = DEFAULT_COOKIE_DIR,
+    icloudpd_argv: Callable[[list[str]], list[str]] | None = None,
     static_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="icloudpd-web", lifespan=_lifespan)
+    if icloudpd_argv is None:
+        icloudpd_argv = _make_icloudpd_argv(cookie_dir)
+
     install_handlers(app)
     install_session_middleware(app, secret=session_secret)
 
