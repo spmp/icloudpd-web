@@ -18,7 +18,7 @@ import {
 } from "@chakra-ui/icons";
 import { FaPlay, FaPause, FaKey } from "react-icons/fa";
 import type { PolicyView } from "@/types/api";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "@/api/client";
 import { useStartRun, useStopRun } from "@/hooks/useRuns";
 import { useRunEvents } from "@/hooks/useRunEvents";
@@ -145,6 +145,28 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
   }, [isOpen, liveLogText, policy.last_run?.run_id, policy.is_running]);
 
   const logText = liveLogText || historicalLog;
+
+  const logContainerRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+
+  const handleScroll = () => {
+    const el = logContainerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 32;
+  };
+
+  useEffect(() => {
+    if (!isAtBottomRef.current) return;
+    const el = logContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logText]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    isAtBottomRef.current = true;
+    const el = logContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [isOpen]);
 
   const handleRun = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -408,6 +430,8 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
       <Collapse in={isOpen}>
         <Box p={4} bg="gray.50">
           <Box
+            ref={logContainerRef}
+            onScroll={handleScroll}
             ml={12}
             maxH="300px"
             overflowY="auto"
