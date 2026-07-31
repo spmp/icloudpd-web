@@ -24,7 +24,7 @@ ARG ICLOUDPD_WEB_TAG=main
 RUN git clone --depth=1 --branch "${ICLOUDPD_WEB_TAG}" "${ICLOUDPD_WEB_REPO}" /repo
 
 # ── Stage 2: build icloudpd wheel from GitHub ────────────────────────────────
-FROM python:3.12-slim AS icloudpd-builder
+FROM python:13-slim AS icloudpd-builder
 
 ARG ICLOUDPD_REPO
 ARG ICLOUDPD_BRANCH=main
@@ -54,7 +54,7 @@ COPY --from=web-source /repo/src/ src/
 RUN cd web && npm run build
 
 # ── Stage 4: runtime image ────────────────────────────────────────────────────
-FROM python:3.12.8-slim
+FROM python:13-slim
 
 # curl is used by HEALTHCHECK.
 RUN apt-get update \
