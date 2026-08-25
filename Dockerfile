@@ -1,21 +1,98 @@
-FROM python:3.12.8-slim
+# Fully standalone multi-stage build — no local source checkout required.
+# Both repos are cloned from git at build time using the specified tags.
+#
+# Build args:
+#   ICLOUDPD_WEB_REPO    - Clone URL for this repo (required)
+#   ICLOUDPD_WEB_TAG     - Branch / tag / commit to check out (default: main)
+#   ICLOUDPD_REPO        - Clone URL for the custom icloudpd fork (required)
+#   ICLOUDPD_BRANCH      - Branch / tag / commit to check out (default: main)
+#
+# Example:
+#   docker build \
+#     --build-arg ICLOUDPD_WEB_REPO=https://github.com/youruser/icloudpd-web.git \
+#     --build-arg ICLOUDPD_WEB_TAG=v2026.4.20 \
+#     --build-arg ICLOUDPD_REPO=https://github.com/youruser/icloud_photos_downloader.git \
+#     --build-arg ICLOUDPD_BRANCH=my-feature-branch \
+#     -f Dockerfile.standalone -t icloudpd-web .
 
-ARG VERSION
+# ── Stage 1: clone icloudpd-web source ───────────────────────────────────────
+FROM alpine/git AS web-source
+
+ARG ICLOUDPD_WEB_REPO
+ARG ICLOUDPD_WEB_TAG=main
+
+RUN git clone --depth=1 --branch "${ICLOUDPD_WEB_TAG}" "${ICLOUDPD_WEB_REPO}" /repo
+
+# ── Stage 2: build icloudpd wheel from GitHub ────────────────────────────────
+FROM python:3.13-slim AS icloudpd-builder
+
+ARG ICLOUDPD_REPO
+ARG ICLOUDPD_BRANCH=main
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+RUN git clone --depth=1 --branch "${ICLOUDPD_BRANCH}" "${ICLOUDPD_REPO}" .
+
+RUN pip install --no-cache-dir build \
+ && python -m build --wheel --outdir /wheels
+
+# ── Stage 3: build the React frontend ────────────────────────────────────────
+FROM node:20-slim AS frontend-builder
+
+WORKDIR /project
+
+COPY --from=web-source /repo/web/package.json /repo/web/package-lock.json web/
+RUN cd web && npm ci
+
+COPY --from=web-source /repo/web/ web/
+COPY --from=web-source /repo/src/ src/
+
+# vite.config.ts sets outDir: "../src/icloudpd_web/web_dist" relative to web/
+RUN cd web && npm run build
+
+# ── Stage 4: runtime image ────────────────────────────────────────────────────
+FROM python:3.13-slim
 
 # curl is used by HEALTHCHECK.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir "icloudpd-web==${VERSION}"
+WORKDIR /build
+
+# Build and install icloudpd-web from the cloned source.
+# README.md is excluded from the clone's .gitignore check — a placeholder
+# satisfies hatchling's metadata read if it isn't present.
+COPY --from=web-source /repo/pyproject.toml /repo/LICENSE ./
+RUN echo "# icloudpd-web" > README.md
+COPY --from=web-source /repo/src/ src/
+COPY --from=frontend-builder /project/src/icloudpd_web/web_dist src/icloudpd_web/web_dist
+RUN pip install --no-cache-dir .
+
+# Override the icloudpd dependency with the custom wheel from Stage 2.
+COPY --from=icloudpd-builder /wheels/icloudpd-*.whl /tmp/
+RUN pip install --no-cache-dir --force-reinstall /tmp/icloudpd-*.whl \
+ && rm /tmp/icloudpd-*.whl
+
+# The fork's plugins/ directory sits at the repo root, outside src/, so setuptools
+# does not include it in the wheel. Copy it directly into site-packages so the
+# entry-point module path ("plugins.immich.immich:ImmichPlugin") resolves at runtime.
+# The destination is derived at build time so this doesn't silently break on a
+# future base-image Python version bump.
+COPY --from=icloudpd-builder /build/plugins /tmp/plugins
+RUN python -c "import site; print(site.getsitepackages()[0])" > /tmp/site-packages-dir \
+ && cp -r /tmp/plugins "$(cat /tmp/site-packages-dir)/plugins" \
+ && rm -rf /tmp/plugins /tmp/site-packages-dir
 
 # Install entrypoint with execute bit BEFORE switching to non-root user.
-COPY docker-entrypoint.sh /usr/local/bin/
+COPY --from=web-source /repo/docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Non-root user. Data lives under /data (mounted volume); downloads under
-# /downloads (user-mounted). Both directories are pre-created and chown'd
-# so a simple `-v host:/data` works without host-side `chown` gymnastics.
+# /downloads (user-mounted).
 RUN useradd -m -u 1000 appuser \
  && mkdir -p /data /downloads /.pyicloud \
  && chown -R appuser:appuser /data /downloads /.pyicloud
@@ -23,16 +100,10 @@ RUN useradd -m -u 1000 appuser \
 USER appuser
 WORKDIR /home/appuser
 
-# Declare volumes so users see them in `docker inspect` and orchestrators
-# auto-create host paths.
 VOLUME ["/data", "/downloads", "/.pyicloud"]
 
 EXPOSE 5000
 
-# Defaults. The entrypoint only forwards flags for vars that are set, so
-# unsetting any of these returns you to the CLI's built-in defaults.
-# ICLOUDPD_COOKIE_DIR should be volume-mounted for persistence across restarts
-# (cookies store authentication tokens — losing them forces re-auth/2FA).
 ENV HOST=0.0.0.0 \
     PORT=5000 \
     DATA_DIR=/data \
