@@ -60,9 +60,12 @@ COPY src/ src/
 COPY --from=frontend-builder /project/src/icloudpd_web/web_dist src/icloudpd_web/web_dist
 RUN pip install --no-cache-dir .
 
-# Override the icloudpd dependency with the custom wheel from Stage 1.
+# Override the icloudpd dependency with the custom wheel from Stage 1. Do not
+# resolve its dependencies again: that can downgrade shared packages below the
+# versions selected for the web package.
 COPY --from=icloudpd-builder /wheels/icloudpd-*.whl /tmp/
-RUN pip install --no-cache-dir --force-reinstall /tmp/icloudpd-*.whl \
+RUN pip install --no-cache-dir --force-reinstall --no-deps /tmp/icloudpd-*.whl \
+ && python -c "from anyio.abc import ObjectReceiveStream; from typing_extensions import sentinel; from icloudpd.cli import cli" \
  && rm /tmp/icloudpd-*.whl
 
 # The fork's plugins/ directory sits at the repo root, outside src/, so setuptools

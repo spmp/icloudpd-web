@@ -4,8 +4,10 @@ services:
     # Uncomment to build locally instead of pulling:
     # build:
     #   context: .
+    #   dockerfile: Dockerfile
     #   args:
-    #     VERSION: 2026.4.20.post1
+    #     ICLOUDPD_REPO: https://github.com/spmp/icloud_photos_downloader.git
+    #     ICLOUDPD_BRANCH: feature/until-skip-created-before
     container_name: icloudpd-web
     restart: unless-stopped
     ports:

@@ -1,33 +1,13 @@
-# Fully standalone multi-stage build — no local source checkout required.
-# Both repos are cloned from git at build time using the specified tags.
+# Local multi-stage build. The web application is copied from this checkout;
+# only the custom icloudpd fork is cloned from GitHub.
 #
-# Build args:
-#   ICLOUDPD_WEB_REPO    - Clone URL for this repo (required)
-#   ICLOUDPD_WEB_TAG     - Branch / tag / commit to check out (default: main)
-#   ICLOUDPD_REPO        - Clone URL for the custom icloudpd fork (required)
-#   ICLOUDPD_BRANCH      - Branch / tag / commit to check out (default: main)
-#
-# Example:
-#   docker build \
-#     --build-arg ICLOUDPD_WEB_REPO=https://github.com/youruser/icloudpd-web.git \
-#     --build-arg ICLOUDPD_WEB_TAG=v2026.4.20 \
-#     --build-arg ICLOUDPD_REPO=https://github.com/youruser/icloud_photos_downloader.git \
-#     --build-arg ICLOUDPD_BRANCH=my-feature-branch \
-#     -f Dockerfile.standalone -t icloudpd-web .
+# Build args default to the currently required plugin-support branches.
 
-# ── Stage 1: clone icloudpd-web source ───────────────────────────────────────
-FROM alpine/git AS web-source
-
-ARG ICLOUDPD_WEB_REPO
-ARG ICLOUDPD_WEB_TAG=main
-
-RUN git clone --depth=1 --branch "${ICLOUDPD_WEB_TAG}" "${ICLOUDPD_WEB_REPO}" /repo
-
-# ── Stage 2: build icloudpd wheel from GitHub ────────────────────────────────
+# Build icloudpd wheel from GitHub.
 FROM python:3.13-slim AS icloudpd-builder
 
-ARG ICLOUDPD_REPO
-ARG ICLOUDPD_BRANCH=main
+ARG ICLOUDPD_REPO=https://github.com/spmp/icloud_photos_downloader.git
+ARG ICLOUDPD_BRANCH=feature/until-skip-created-before
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git \
@@ -39,60 +19,50 @@ RUN git clone --depth=1 --branch "${ICLOUDPD_BRANCH}" "${ICLOUDPD_REPO}" .
 RUN pip install --no-cache-dir build \
  && python -m build --wheel --outdir /wheels
 
-# ── Stage 3: build the React frontend ────────────────────────────────────────
+# Build the React frontend from this checkout.
 FROM node:20-slim AS frontend-builder
 
 WORKDIR /project
 
-COPY --from=web-source /repo/web/package.json /repo/web/package-lock.json web/
+COPY web/package.json web/package-lock.json web/
 RUN cd web && npm ci
 
-COPY --from=web-source /repo/web/ web/
-COPY --from=web-source /repo/src/ src/
-
-# vite.config.ts sets outDir: "../src/icloudpd_web/web_dist" relative to web/
+COPY web/ web/
+COPY src/ src/
 RUN cd web && npm run build
 
-# ── Stage 4: runtime image ────────────────────────────────────────────────────
+# Runtime image.
 FROM python:3.13-slim
 
-# curl is used by HEALTHCHECK.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 
-# Build and install icloudpd-web from the cloned source.
-# README.md is excluded from the clone's .gitignore check — a placeholder
-# satisfies hatchling's metadata read if it isn't present.
-COPY --from=web-source /repo/pyproject.toml /repo/LICENSE ./
-RUN echo "# icloudpd-web" > README.md
-COPY --from=web-source /repo/src/ src/
+# README.md is excluded by .dockerignore, so provide the metadata placeholder.
+COPY pyproject.toml LICENSE ./
+RUN printf '# icloudpd-web\n' > README.md
+COPY src/ src/
 COPY --from=frontend-builder /project/src/icloudpd_web/web_dist src/icloudpd_web/web_dist
 RUN pip install --no-cache-dir .
 
-# Override the icloudpd dependency with the custom wheel from Stage 2.
+# The custom wheel has incomplete dependency metadata. Keep its dependencies
+# from being re-resolved after installing the web application's requirements.
 COPY --from=icloudpd-builder /wheels/icloudpd-*.whl /tmp/
-RUN pip install --no-cache-dir --force-reinstall /tmp/icloudpd-*.whl \
+RUN pip install --no-cache-dir --force-reinstall --no-deps /tmp/icloudpd-*.whl \
+ && python -c "from anyio.abc import ObjectReceiveStream; from typing_extensions import sentinel; from icloudpd.cli import cli" \
  && rm /tmp/icloudpd-*.whl
 
-# The fork's plugins/ directory sits at the repo root, outside src/, so setuptools
-# does not include it in the wheel. Copy it directly into site-packages so the
-# entry-point module path ("plugins.immich.immich:ImmichPlugin") resolves at runtime.
-# The destination is derived at build time so this doesn't silently break on a
-# future base-image Python version bump.
+# The fork's plugins/ directory is outside src/ and is not included in its wheel.
 COPY --from=icloudpd-builder /build/plugins /tmp/plugins
 RUN python -c "import site; print(site.getsitepackages()[0])" > /tmp/site-packages-dir \
  && cp -r /tmp/plugins "$(cat /tmp/site-packages-dir)/plugins" \
  && rm -rf /tmp/plugins /tmp/site-packages-dir
 
-# Install entrypoint with execute bit BEFORE switching to non-root user.
-COPY --from=web-source /repo/docker-entrypoint.sh /usr/local/bin/
+COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-# Non-root user. Data lives under /data (mounted volume); downloads under
-# /downloads (user-mounted).
 RUN useradd -m -u 1000 appuser \
  && mkdir -p /data /downloads /.pyicloud \
  && chown -R appuser:appuser /data /downloads /.pyicloud
