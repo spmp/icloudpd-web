@@ -30,13 +30,7 @@ interface PolicyRowProps {
   policy: PolicyView;
 }
 
-type PolicyRowState =
-  | "ready"
-  | "waiting"
-  | "running"
-  | "errored"
-  | "awaiting_mfa"
-  | "done";
+type PolicyRowState = "ready" | "waiting" | "running" | "errored" | "awaiting_mfa" | "done";
 
 export const PolicyRow = ({ policy }: PolicyRowProps) => {
   const { isOpen, onToggle } = useDisclosure();
@@ -45,21 +39,9 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
     onOpen: onInterruptOpen,
     onClose: onInterruptClose,
   } = useDisclosure();
-  const {
-    isOpen: isDeleteOpen,
-    onOpen: onDeleteOpen,
-    onClose: onDeleteClose,
-  } = useDisclosure();
-  const {
-    isOpen: isMfaOpen,
-    onOpen: onMfaOpen,
-    onClose: onMfaClose,
-  } = useDisclosure();
-  const {
-    isOpen: isEditOpen,
-    onOpen: onEditOpen,
-    onClose: onEditClose,
-  } = useDisclosure();
+  const { isOpen: isDeleteOpen, onOpen: onDeleteOpen, onClose: onDeleteClose } = useDisclosure();
+  const { isOpen: isMfaOpen, onOpen: onMfaOpen, onClose: onMfaClose } = useDisclosure();
+  const { isOpen: isEditOpen, onOpen: onEditOpen, onClose: onEditClose } = useDisclosure();
 
   const startRun = useStartRun();
   const stopRun = useStopRun();
@@ -316,7 +298,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
   return (
     <Box width="100%" borderWidth="1px" borderRadius="lg" overflow="hidden">
       <Flex
-        p={4}
+        p={{ base: 3, md: 4 }}
         justify="space-between"
         align="center"
         bg={isOpen ? "gray.50" : "white"}
@@ -324,18 +306,18 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
         cursor="pointer"
         _hover={{ bg: "gray.50" }}
       >
-        <Flex flex={1} gap={4}>
+        <Flex flex={1} minW={0} gap={{ base: 1, md: 4 }}>
           <IconButton
             aria-label="Expand row"
             icon={isOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
             variant="ghost"
             size="sm"
           />
-          <Box flex={1}>
-            <Text fontSize="16px" fontWeight="medium">
+          <Box flex={1} minW={0}>
+            <Text fontSize="16px" fontWeight="medium" overflowWrap="anywhere">
               {policy.name}
             </Text>
-            <Flex gap={2} color="gray.500" fontSize="14px">
+            <Flex gap={2} color="gray.500" fontSize="14px" display={{ base: "none", md: "flex" }}>
               {getStateText(policyRowState)}
               <Text>•</Text>
               <Text>{policy.username}</Text>
@@ -343,7 +325,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
               <Text>{policy.directory}</Text>
             </Flex>
           </Box>
-          <Box width="150px" display="flex">
+          <Box width="150px" display={{ base: "none", md: "flex" }}>
             <Box flex="1" mt={1}>
               <Text fontSize="12px" color="gray.600" fontWeight="medium">
                 {policyRowState === "running"
@@ -363,10 +345,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
                         : "idle"}
               </Text>
               <Progress
-                isIndeterminate={
-                  policyRowState === "running" ||
-                  policyRowState === "awaiting_mfa"
-                }
+                isIndeterminate={policyRowState === "running" || policyRowState === "awaiting_mfa"}
                 value={
                   policyRowState === "done" || policyRowState === "errored"
                     ? 100
@@ -381,7 +360,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
             </Box>
           </Box>
         </Flex>
-        <Flex gap={2} ml={4}>
+        <Flex gap={{ base: 0, md: 2 }} ml={{ base: 1, md: 4 }} flexShrink={0}>
           {renderActionButton(policyRowState)}
           <IconButton
             aria-label="Edit policy"
@@ -428,12 +407,13 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
       />
 
       <Collapse in={isOpen}>
-        <Box p={4} bg="gray.50">
+        <Box p={{ base: 3, md: 4 }} bg="gray.50">
           <Box
             ref={logContainerRef}
             onScroll={handleScroll}
-            ml={12}
+            ml={{ base: 0, md: 12 }}
             maxH="300px"
+            overflowX="auto"
             overflowY="auto"
             sx={{
               "&::-webkit-scrollbar": {
@@ -453,9 +433,10 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
             <Text
               fontSize="14px"
               fontFamily="monospace"
-              whiteSpace="pre-wrap"
+              whiteSpace="pre"
+              minW="max-content"
               sx={{
-                wordBreak: "break-word",
+                wordBreak: "normal",
               }}
             >
               {logText || "No logs available"}
