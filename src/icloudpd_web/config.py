@@ -13,11 +13,17 @@ class AppriseSettings(BaseModel):
     on_start: bool = False
     on_success: bool = True
     on_failure: bool = True
+    # Notify when a run stalls waiting for a 2FA code — essential for
+    # unattended scheduled runs whose Apple session has expired.
+    on_mfa_required: bool = True
 
 
 class ServerSettings(BaseModel):
     apprise: AppriseSettings = Field(default_factory=AppriseSettings)
     retention_runs: int = 10
+    # How long a run may wait for a 2FA code before it is failed. Without
+    # a timeout an unattended run would hold the policy's slot forever.
+    mfa_timeout_seconds: int = 600
 
 
 class SettingsStore:

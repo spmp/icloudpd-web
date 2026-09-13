@@ -9,7 +9,9 @@ export const queryClient = new QueryClient({
         return failureCount < 1;
       },
       staleTime: 5_000,
-      refetchOnWindowFocus: false,
+      // Refetch on focus so a user returning to a stale tab (dead SSE,
+      // laptop wake) sees current state without a manual reload.
+      refetchOnWindowFocus: true,
     },
     mutations: {
       retry: false,

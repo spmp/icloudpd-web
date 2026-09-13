@@ -78,18 +78,33 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
     }
   }, [policyRowState, isMfaOpen, onMfaOpen, onMfaClose]);
 
-  // Track whether the current awaiting_mfa is a re-prompt after a previously
-  // submitted code. If we ever leave awaiting_mfa and come back, it means
-  // icloudpd rejected the first code.
-  const [mfaPromptCount, setMfaPromptCount] = useState(0);
-  const wasAwaitingRef = React.useRef(false);
-  useEffect(() => {
-    const isAwaiting = policyRowState === "awaiting_mfa";
-    if (isAwaiting && !wasAwaitingRef.current) {
-      setMfaPromptCount((c) => c + 1);
-    }
-    wasAwaitingRef.current = isAwaiting;
-  }, [policyRowState]);
+  // Distinct failure explanations (live event wins over persisted last_run).
+  const failureReason =
+    runState?.failureReason ?? policy.last_run?.failure_reason ?? null;
+  const failureText =
+    failureReason === "mfa_rejected"
+      ? "Apple rejected the 2FA code — run again to retry"
+      : failureReason === "mfa_timeout"
+        ? "timed out waiting for a 2FA code"
+        : failureReason === "mfa_2sa_unsupported"
+          ? "legacy two-step auth (2sa) is not supported"
+          : failureReason === "bad_password"
+            ? "wrong iCloud password — update it in the policy"
+            : "failed";
+
+  // Localized "next scheduled run" text (server sends an ISO timestamp with
+  // offset; Date renders it in the viewer's zone).
+  const nextRunText = useMemo(() => {
+    if (!policy.enabled || !policy.next_run_at) return null;
+    const d = new Date(policy.next_run_at);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }, [policy.enabled, policy.next_run_at]);
 
   // Derive raw counters for the status text. The progress bar itself is
   // indeterminate while running, so we no longer compute a percentage.
@@ -157,6 +172,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
       pushSuccess(`Started policy "${policy.name}"`);
     } catch (err) {
       if (err instanceof ApiError) pushError(err.message, err.errorId);
+      else pushError(`Failed to start "${policy.name}" — is the server reachable?`);
     }
   };
 
@@ -168,6 +184,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
       pushSuccess(`Stopped "${policy.name}"`);
     } catch (err) {
       if (err instanceof ApiError) pushError(err.message, err.errorId);
+      else pushError(`Failed to stop "${policy.name}" — is the server reachable?`);
     }
   };
 
@@ -323,6 +340,14 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
               <Text>{policy.username}</Text>
               <Text>•</Text>
               <Text>{policy.directory}</Text>
+              {nextRunText && (
+                <>
+                  <Text>•</Text>
+                  <Text title={policy.next_run_at ?? undefined}>
+                    next run {nextRunText}
+                  </Text>
+                </>
+              )}
             </Flex>
           </Box>
           <Box width="150px" display={{ base: "none", md: "flex" }}>
@@ -337,7 +362,7 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
                   : policyRowState === "awaiting_mfa"
                     ? "awaiting 2FA"
                     : policyRowState === "errored"
-                      ? "failed"
+                      ? failureText
                       : policyRowState === "done"
                         ? total > 0
                           ? `done • ${downloaded}/${total}`
@@ -393,7 +418,6 @@ export const PolicyRow = ({ policy }: PolicyRowProps) => {
         policy={policy}
         onInterruptConfirmed={handleInterruptConfirmed}
         onMfaCancel={handleInterruptConfirmed}
-        mfaRejectedPrevious={mfaPromptCount > 1}
         dialogs={{
           delete: { isOpen: isDeleteOpen, onClose: onDeleteClose },
           interrupt: { isOpen: isInterruptOpen, onClose: onInterruptClose },

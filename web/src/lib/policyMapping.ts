@@ -40,6 +40,7 @@ const NEW_BACKEND_EXTRAS = new Set([
   "filter_match_patterns",
   "filter_device_makes",
   "filter_device_models",
+  "filter_exif_fallback",
 ]);
 
 export interface FormPolicy extends OldPolicy {
@@ -68,6 +69,7 @@ export interface FormPolicy extends OldPolicy {
   immich_favorite: string[];
   associate_live_enabled: boolean;
   associate_live_with_extra_sizes: string[];
+  filter_exif_fallback: "keep" | "delete";
 }
 
 export function defaultFormPolicy(): FormPolicy {
@@ -145,6 +147,7 @@ export function defaultFormPolicy(): FormPolicy {
     immich_favorite: [],
     associate_live_enabled: false,
     associate_live_with_extra_sizes: [],
+    filter_exif_fallback: "keep",
   };
 }
 
@@ -188,6 +191,7 @@ export function fromPolicyView(view: PolicyView): FormPolicy {
     associate_live_with_extra_sizes: typeof icloudpd.associate_live_with_extra_sizes === "string"
       ? icloudpd.associate_live_with_extra_sizes.split(",").filter(Boolean)
       : [],
+    filter_exif_fallback: view.filters?.exif_fallback ?? "keep",
   };
 }
 
@@ -245,6 +249,7 @@ export function toBackendPolicy(form: FormPolicy): BackendPolicy {
       match_patterns: form.filter_match_patterns,
       device_makes: form.filter_device_makes,
       device_models: form.filter_device_models,
+      exif_fallback: form.filter_exif_fallback,
     },
   };
 }

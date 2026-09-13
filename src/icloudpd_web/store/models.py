@@ -18,6 +18,10 @@ class Filters(BaseModel):
     match_patterns: list[str] = Field(default_factory=list)
     device_makes: list[str] = Field(default_factory=list)
     device_models: list[str] = Field(default_factory=list)
+    # What to do when a device filter is configured but the file has no
+    # readable EXIF Make/Model (screenshots, web saves, unparseable formats):
+    # "keep" fails open (default), "delete" treats missing EXIF as non-matching.
+    exif_fallback: Literal["keep", "delete"] = "keep"
 
     @field_validator("match_patterns")
     @classmethod
@@ -57,6 +61,8 @@ class RunSummary(BaseModel):
     status: Literal["running", "success", "failed", "stopped"]
     exit_code: int | None = None
     error_id: str | None = None
+    # Machine-readable failure cause (e.g. "mfa_rejected", "mfa_timeout").
+    failure_reason: str | None = None
 
 
 class Policy(BaseModel):
@@ -126,6 +132,28 @@ class Policy(BaseModel):
         if isinstance(album, str) and album.strip().lower() in ("", "all photos"):
             cleaned.pop("album", None)
         return cleaned
+
+    @model_validator(mode="after")
+    def _filters_vs_icloud_delete(self) -> Policy:
+        """Reject post-download filters combined with iCloud-side deletion.
+
+        With delete_after_download / keep_icloud_recent_days, icloudpd removes
+        the asset from iCloud once downloaded; if a filter then deletes the
+        local copy, the photo is gone everywhere. Refuse the combination.
+        """
+        if self.filters.is_empty():
+            return self
+        if self.icloudpd.get("delete_after_download") or (
+            self.icloudpd.get("keep_icloud_recent_days") is not None
+        ):
+            raise ValueError(
+                "post-download filters cannot be combined with "
+                "delete_after_download or keep_icloud_recent_days: icloudpd "
+                "deletes the photo from iCloud after download, and the filter "
+                "would then delete the local copy — the photo would be lost "
+                "everywhere. Remove the filters or the iCloud deletion option."
+            )
+        return self
 
     @model_validator(mode="after")
     def _migrate_library(self) -> Policy:

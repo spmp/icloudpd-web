@@ -7,14 +7,27 @@ import type { Policy, PolicyView } from "@/types/api";
 const LIST_KEY = ["policies"] as const;
 
 export function usePolicies() {
-  return useQuery({ queryKey: LIST_KEY, queryFn: policiesApi.list });
+  return useQuery({
+    queryKey: LIST_KEY,
+    queryFn: policiesApi.list,
+    // Slow polling fallback: if SSE dies silently, stale "running" rows
+    // self-heal within 30s instead of persisting until a manual reload.
+    refetchInterval: 30_000,
+  });
 }
 
 export function useUpsertPolicy() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ name, policy }: { name: string; policy: Policy }) =>
-      policiesApi.upsert(name, policy),
+    mutationFn: ({
+      name,
+      policy,
+      createOnly,
+    }: {
+      name: string;
+      policy: Policy;
+      createOnly?: boolean;
+    }) => policiesApi.upsert(name, policy, { createOnly }),
     onSuccess: (updated: PolicyView) => {
       qc.invalidateQueries({ queryKey: LIST_KEY });
       qc.setQueryData(["policies", updated.name], updated);

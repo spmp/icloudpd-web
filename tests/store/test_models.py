@@ -106,3 +106,34 @@ def test_policy_strips_unknown_icloudpd_keys() -> None:
 def test_aws_requires_bucket_when_enabled() -> None:
     with pytest.raises(ValidationError):
         AwsConfig(enabled=True, bucket=None, prefix="", region="us-east-1")
+
+
+def test_filters_rejected_with_delete_after_download() -> None:
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        Policy(
+            **_valid_kwargs(
+                icloudpd={"delete_after_download": True},
+                filters={"file_suffixes": [".heic"]},
+            )
+        )
+
+
+def test_filters_rejected_with_keep_icloud_recent_days() -> None:
+    # 0 is a valid (and the most aggressive) value — must still be rejected.
+    with pytest.raises(ValidationError, match="cannot be combined"):
+        Policy(
+            **_valid_kwargs(
+                icloudpd={"keep_icloud_recent_days": 0},
+                filters={"device_makes": ["Apple"]},
+            )
+        )
+
+
+def test_delete_after_download_ok_without_filters() -> None:
+    p = Policy(**_valid_kwargs(icloudpd={"delete_after_download": True}))
+    assert p.icloudpd["delete_after_download"] is True
+
+
+def test_filters_ok_without_icloud_delete() -> None:
+    p = Policy(**_valid_kwargs(filters={"file_suffixes": [".heic"]}))
+    assert p.filters.file_suffixes == [".heic"]

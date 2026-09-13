@@ -130,6 +130,28 @@ def test_build_argv_snake_case_to_kebab() -> None:
     assert argv[idx + 1] == "{:%Y/%m/%d}"
 
 
+def test_build_argv_default_cookie_directory_emitted() -> None:
+    argv = build_argv(_p(), default_cookie_directory=Path("/data/cookies"))
+    assert "--cookie-directory" in argv
+    idx = argv.index("--cookie-directory")
+    assert argv[idx + 1] == "/data/cookies"
+
+
+def test_build_argv_policy_cookie_directory_wins_over_default() -> None:
+    argv = build_argv(
+        _p(icloudpd={"cookie_directory": "/custom/cookies"}),
+        default_cookie_directory=Path("/data/cookies"),
+    )
+    indices = [i for i, v in enumerate(argv) if v == "--cookie-directory"]
+    assert len(indices) == 1
+    assert argv[indices[0] + 1] == "/custom/cookies"
+
+
+def test_build_argv_no_cookie_directory_without_default() -> None:
+    argv = build_argv(_p())
+    assert "--cookie-directory" not in argv
+
+
 def test_build_argv_multi_size() -> None:
     p = Policy(
         name="p",

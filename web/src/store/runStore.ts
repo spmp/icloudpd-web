@@ -15,6 +15,7 @@ export interface RunStateEntry {
   total: number;
   lastEventId: string;
   errorId: string | null;
+  failureReason: string | null;
 }
 
 interface Store {
@@ -22,7 +23,12 @@ interface Store {
   init(runId: string, policyName: string): void;
   appendLog(runId: string, line: string, seq: string): void;
   setProgress(runId: string, downloaded: number, total: number): void;
-  setStatus(runId: string, status: RunStatus, errorId?: string | null): void;
+  setStatus(
+    runId: string,
+    status: RunStatus,
+    errorId?: string | null,
+    failureReason?: string | null,
+  ): void;
   clear(runId: string): void;
 }
 
@@ -43,6 +49,7 @@ export const useRunStore = create<Store>((set) => ({
           total: 0,
           lastEventId: "",
           errorId: null,
+          failureReason: null,
         },
       },
     })),
@@ -62,14 +69,19 @@ export const useRunStore = create<Store>((set) => ({
       if (!entry) return state;
       return { runs: { ...state.runs, [runId]: { ...entry, downloaded, total } } };
     }),
-  setStatus: (runId, status, errorId = null) =>
+  setStatus: (runId, status, errorId = null, failureReason = null) =>
     set((state) => {
       const entry = state.runs[runId];
       if (!entry) return state;
       return {
         runs: {
           ...state.runs,
-          [runId]: { ...entry, status, errorId: errorId ?? entry.errorId },
+          [runId]: {
+            ...entry,
+            status,
+            errorId: errorId ?? entry.errorId,
+            failureReason: failureReason ?? entry.failureReason,
+          },
         },
       };
     }),

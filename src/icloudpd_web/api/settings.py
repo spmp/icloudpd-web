@@ -25,4 +25,5 @@ def put_settings(body: ServerSettings, request: Request) -> dict:
     store.save(body)
     request.app.state.notifier.update(body.apprise)
     request.app.state.runner._retention = body.retention_runs  # noqa: SLF001
+    request.app.state.runner._mfa_timeout = body.mfa_timeout_seconds  # noqa: SLF001
     return body.model_dump(mode="json")

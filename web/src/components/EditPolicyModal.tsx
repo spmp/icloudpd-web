@@ -7,6 +7,7 @@ import {
   ModalBody,
   ModalCloseButton,
   FormControl,
+  FormErrorMessage,
   Input,
   InputGroup,
   InputRightElement,
@@ -101,14 +102,21 @@ export function EditPolicyModal({
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const cmdPreview = useDisclosure();
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const update = <K extends keyof FormPolicy>(key: K, value: FormPolicy[K]) =>
     setFormData((prev) => ({ ...prev, [key]: value }));
 
   const handleSave = async () => {
+    setNameError(null);
     try {
       const payload = toBackendPolicy(formData);
-      await upsert.mutateAsync({ name: formData.name, policy: payload });
+      await upsert.mutateAsync({
+        name: formData.name,
+        policy: payload,
+        // Creating (not editing) must never overwrite an existing policy.
+        createOnly: !isEditing,
+      });
       if (password) {
         try {
           await setPolicyPassword.mutateAsync({
@@ -117,6 +125,7 @@ export function EditPolicyModal({
           });
         } catch (err) {
           if (err instanceof ApiError) pushError(err.message, err.errorId);
+          else pushError("Failed to store the iCloud password — is the server reachable?");
         }
       }
       pushSuccess(
@@ -126,7 +135,14 @@ export function EditPolicyModal({
       );
       onClose();
     } catch (err) {
-      if (err instanceof ApiError) pushError(err.message, err.errorId);
+      if (err instanceof ApiError) {
+        if (err.field === "name") {
+          setNameError(err.message);
+        }
+        pushError(err.message, err.errorId);
+      } else {
+        pushError("Failed to save policy — is the server reachable?");
+      }
     }
   };
 
@@ -163,18 +179,24 @@ export function EditPolicyModal({
                 Basic Settings
               </Text>
               <VStack spacing={4} align="stretch">
-                <FormControl isRequired>
+                <FormControl isRequired isInvalid={nameError !== null}>
                   <FieldWithInfo
                     label="Policy Name"
                     info="Unique identifier used as the policy's primary key in storage. Cannot be changed after creation — delete and recreate if you need a different name."
                   >
                     <Input
                       value={formData.name}
-                      onChange={(e) => update("name", e.target.value)}
+                      onChange={(e) => {
+                        setNameError(null);
+                        update("name", e.target.value);
+                      }}
                       isDisabled={isEditing}
                       maxW="300px"
                     />
                   </FieldWithInfo>
+                  {nameError && (
+                    <FormErrorMessage>{nameError}</FormErrorMessage>
+                  )}
                 </FormControl>
 
                 <FormControl isRequired>
@@ -270,7 +292,7 @@ export function EditPolicyModal({
                 <FormControl>
                   <FieldWithInfo
                     label="Timezone"
-                    info="IANA timezone name used to interpret the cron schedule (e.g. 'America/Los_Angeles'). Leave blank for server default."
+                    info="IANA timezone name used to interpret the cron schedule (e.g. 'America/Los_Angeles'). Leave blank to use the server's local timezone."
                   >
                     <Input
                       value={formData.timezone ?? ""}
@@ -278,7 +300,7 @@ export function EditPolicyModal({
                         update("timezone", e.target.value || null)
                       }
                       maxW="200px"
-                      placeholder="UTC"
+                      placeholder="server timezone"
                       isDisabled={!formData.enabled}
                     />
                   </FieldWithInfo>
@@ -723,8 +745,22 @@ export function EditPolicyModal({
                   filter_match_patterns: formData.filter_match_patterns,
                   filter_device_makes: formData.filter_device_makes,
                   filter_device_models: formData.filter_device_models,
+                  filter_exif_fallback: formData.filter_exif_fallback,
                 }}
-                onChange={(key, value) => update(key, value)}
+                onChange={(key, value) =>
+                  // Every PostDownloadFilterValues key exists on FormPolicy
+                  // with the identical type, so the cast is sound; TS just
+                  // can't correlate the two generics through the callback.
+                  update(key, value as FormPolicy[typeof key])
+                }
+                icloudDeleteConfigured={
+                  formData.keep_icloud_recent_days !== null ||
+                  Boolean(
+                    (formData as unknown as Record<string, unknown>)[
+                      "delete_after_download"
+                    ]
+                  )
+                }
               />
             </Box>
 

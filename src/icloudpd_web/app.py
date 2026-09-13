@@ -32,6 +32,10 @@ from icloudpd_web.store.secrets import SecretStore
 ICLOUDPD_BINARY = "icloudpd"
 DEFAULT_COOKIE_DIR = "/.pyicloud"
 
+# Disable a policy's schedule after this many consecutive wrong-password
+# failures — each cron retry with a bad password risks an Apple lockout.
+AUTH_FAILURE_DISABLE_THRESHOLD = 3
+
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -93,22 +97,26 @@ def create_app(
     notifier = AppriseNotifier(settings.apprise)
     aws_sync = AwsSync()
     mfa_registry = MfaRegistry(mfa_dir)
+    # Consecutive wrong-password failures per policy (reset on success).
+    auth_failures: dict[str, int] = {}
 
     def _on_run_event(run: Run, event: str) -> None:
         policy_store.bump()
         if event == "started":
             notifier.emit("start", policy_name=run.policy_name, summary=_summarize(run))
             return
-        if event != "completed":
+        if event == "mfa_required":
+            notifier.emit(
+                "mfa_required",
+                policy_name=run.policy_name,
+                summary=(
+                    "Run is waiting for a 2FA code — open icloudpd-web and "
+                    "enter the code before the MFA timeout expires."
+                ),
+            )
             return
-        summary = _summarize(run)
-        policy = policy_store.get(run.policy_name)
-        if run.status == "success":
-            notifier.emit("success", policy_name=run.policy_name, summary=summary)
-            if policy is not None and policy.aws is not None and policy.aws.enabled:
-                asyncio.create_task(aws_sync.run(policy.aws, source=Path(policy.directory)))
-        elif run.status == "failed":
-            notifier.emit("failure", policy_name=run.policy_name, summary=summary)
+        if event == "completed":
+            _handle_run_completed(run, policy_store, notifier, aws_sync, auth_failures)
 
     runner = Runner(
         runs_base=runs_dir,
@@ -116,12 +124,24 @@ def create_app(
         retention=settings.retention_runs,
         on_run_event=_on_run_event,
         mfa_registry=mfa_registry,
+        # Persist Apple session cookies under data_dir so 2FA survives
+        # restarts/container recreates (policies can still override).
+        default_cookie_directory=data_dir / "cookies",
+        mfa_timeout=settings.mfa_timeout_seconds,
     )
+
+    def _on_scheduled_start_failure(policy_name: str, reason: str) -> None:
+        notifier.emit(
+            "failure",
+            policy_name=policy_name,
+            summary=f"scheduled run failed to start: {reason}",
+        )
 
     scheduler = Scheduler(
         store=policy_store,
         runner=runner,
         password_lookup=secret_store.get,
+        on_start_failure=_on_scheduled_start_failure,
     )
 
     app.state.data_dir = data_dir
@@ -145,6 +165,32 @@ def create_app(
     app.include_router(settings_router.router)
     install_static(app, static_dir)
     return app
+
+
+def _handle_run_completed(
+    run: Run,
+    policy_store: PolicyStore,
+    notifier: AppriseNotifier,
+    aws_sync: AwsSync,
+    auth_failures: dict[str, int],
+) -> None:
+    summary = _summarize(run)
+    policy = policy_store.get(run.policy_name)
+    if run.status == "success":
+        auth_failures.pop(run.policy_name, None)
+        notifier.emit("success", policy_name=run.policy_name, summary=summary)
+        if policy is not None and policy.aws is not None and policy.aws.enabled:
+            asyncio.create_task(aws_sync.run(policy.aws, source=Path(policy.directory)))
+    elif run.status == "failed":
+        if run.failure_reason == "bad_password":
+            summary = f"wrong iCloud password — update the stored password ({summary})"
+            count = auth_failures.get(run.policy_name, 0) + 1
+            auth_failures[run.policy_name] = count
+            if count >= AUTH_FAILURE_DISABLE_THRESHOLD and policy is not None and policy.enabled:
+                # Stop hammering Apple with a bad password (lockout risk).
+                policy_store.put(policy.model_copy(update={"enabled": False}))
+                summary += f"; schedule disabled after {count} consecutive authentication failures"
+        notifier.emit("failure", policy_name=run.policy_name, summary=summary)
 
 
 def _summarize(run: Run) -> str:

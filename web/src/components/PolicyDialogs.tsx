@@ -14,7 +14,6 @@ interface PolicyDialogsProps {
   policy: PolicyView;
   onInterruptConfirmed: () => void;
   onMfaCancel: () => Promise<void> | void;
-  mfaRejectedPrevious: boolean;
   dialogs: {
     delete: { isOpen: boolean; onClose: () => void };
     interrupt: { isOpen: boolean; onClose: () => void };
@@ -31,7 +30,6 @@ export function PolicyDialogs({
   policy,
   onInterruptConfirmed,
   onMfaCancel,
-  mfaRejectedPrevious,
   dialogs,
 }: PolicyDialogsProps) {
   return (
@@ -60,7 +58,6 @@ export function PolicyDialogs({
             onClose={dialogs.mfa.onClose}
             onCancel={onMfaCancel}
             policyName={policy.name}
-            rejectedPrevious={mfaRejectedPrevious}
           />
         )}
 

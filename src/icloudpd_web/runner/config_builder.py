@@ -1,8 +1,12 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from icloudpd_web.store.models import Policy
+
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 # Canonical allowlist of snake_case keys permitted inside Policy.icloudpd.
@@ -94,13 +98,18 @@ def build_config(policy: Policy, *, password: str | None) -> dict[str, Any]:
     return cfg
 
 
-def build_argv(policy: Policy) -> list[str]:
+def build_argv(policy: Policy, *, default_cookie_directory: Path | None = None) -> list[str]:
     """Translate a Policy into the CLI argv tail for icloudpd.
 
     Returns a list of flag strings (no binary name, no password).
     Always includes --username, --directory, --mfa-provider console,
     and --password-provider console so the process reads the password
     from stdin.
+
+    ``default_cookie_directory`` is emitted as --cookie-directory unless the
+    policy sets its own ``cookie_directory``. Without it, icloudpd falls back
+    to its built-in default (~/.pyicloud), which is not persisted across
+    container recreates — forcing a fresh 2FA on every run.
 
     The ``icloudpd`` dict values are translated as follows:
 
@@ -115,6 +124,8 @@ def build_argv(policy: Policy) -> list[str]:
     args += ["--directory", str(policy.directory)]
     args += ["--mfa-provider", "console"]
     args += ["--password-provider", "console"]
+    if default_cookie_directory is not None and "cookie_directory" not in policy.icloudpd:
+        args += ["--cookie-directory", str(default_cookie_directory)]
 
     for key, value in policy.icloudpd.items():
         flag = "--" + key.replace("_", "-")

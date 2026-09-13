@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from icloudpd_web.integrations.aws_sync import AwsSyncResult
 
-from .conftest import parse_sse, set_policy_password, wait_until_idle
+from .conftest import make_policy_body, parse_sse, set_policy_password, wait_until_idle
 
 
 def test_wf1_happy_path(client: TestClient) -> None:
@@ -378,3 +378,31 @@ def test_wf10_filter_lines_in_log(
     assert (target_dir / "img_apple.heic").exists()
     assert not (target_dir / "img_samsung.jpg").exists()
     assert not (target_dir / "other.png").exists()
+
+
+def test_bad_password_failure_reason_and_auto_disable(
+    app_factory: Callable[..., FastAPI],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A wrong stored iCloud password must surface as failure_reason
+    bad_password, and the schedule must auto-disable after 3 consecutive
+    auth failures (Apple lockout protection)."""
+    monkeypatch.setenv("FAKE_ICLOUDPD_MODE", "bad_password")
+
+    app = app_factory()
+    with TestClient(app) as client:
+        client.post("/auth/login", json={"password": "pw"})
+        client.put("/policies/p", json=make_policy_body("p"))
+        set_policy_password(client)
+
+        for attempt in range(3):
+            r = client.post("/policies/p/runs")
+            assert r.status_code == 200, r.text
+            wait_until_idle(client)
+            body = client.get("/policies/p").json()
+            assert body["last_run"]["status"] == "failed"
+            assert body["last_run"]["failure_reason"] == "bad_password"
+            expect_enabled = attempt < 2
+            assert body["enabled"] is expect_enabled, (
+                f"after {attempt + 1} auth failures enabled should be {expect_enabled}"
+            )

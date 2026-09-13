@@ -182,6 +182,7 @@ describe("toBackendPolicy", () => {
         match_patterns: ["^IMG_"],
         device_makes: ["Apple"],
         device_models: ["iPhone 15 Pro"],
+        exif_fallback: "delete",
       },
     };
     const out = toBackendPolicy(fromPolicyView(view));
@@ -190,13 +191,31 @@ describe("toBackendPolicy", () => {
       match_patterns: ["^IMG_"],
       device_makes: ["Apple"],
       device_models: ["iPhone 15 Pro"],
+      exif_fallback: "delete",
     });
     // Filters must NOT appear in icloudpd block.
     expect("filter_file_suffixes" in out.icloudpd).toBe(false);
     expect("filter_match_patterns" in out.icloudpd).toBe(false);
     expect("filter_device_makes" in out.icloudpd).toBe(false);
     expect("filter_device_models" in out.icloudpd).toBe(false);
+    expect("filter_exif_fallback" in out.icloudpd).toBe(false);
     expect("filters" in out.icloudpd).toBe(false);
+  });
+
+  it("missing exif_fallback from an older backend defaults to keep", () => {
+    const view: PolicyView = {
+      ...baseView,
+      filters: {
+        file_suffixes: [],
+        match_patterns: [],
+        device_makes: ["Apple"],
+        device_models: [],
+        // exif_fallback intentionally absent
+      },
+    };
+    const form = fromPolicyView(view);
+    expect(form.filter_exif_fallback).toBe("keep");
+    expect(toBackendPolicy(form).filters.exif_fallback).toBe("keep");
   });
 
   it("empty filters round-trip stays empty", () => {
@@ -212,6 +231,7 @@ describe("toBackendPolicy", () => {
       match_patterns: [],
       device_makes: [],
       device_models: [],
+      exif_fallback: "keep",
     });
   });
 });

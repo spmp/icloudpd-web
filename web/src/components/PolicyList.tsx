@@ -1,4 +1,13 @@
-import { Box, Flex, IconButton, Text, VStack } from "@chakra-ui/react";
+import {
+  Alert,
+  AlertIcon,
+  Box,
+  Flex,
+  IconButton,
+  Spinner,
+  Text,
+  VStack,
+} from "@chakra-ui/react";
 import { DownloadIcon } from "@chakra-ui/icons";
 import type { PolicyView } from "@/types/api";
 import { PolicyRow } from "./PolicyRow";
@@ -29,9 +38,17 @@ function UploadIcon() {
 
 interface PolicyListProps {
   policies: PolicyView[];
+  /** True while the initial policies fetch is in flight. */
+  isLoading?: boolean;
+  /** True when the policies fetch failed — must not look like "no policies". */
+  isError?: boolean;
 }
 
-export const PolicyList = ({ policies }: PolicyListProps) => {
+export const PolicyList = ({
+  policies,
+  isLoading = false,
+  isError = false,
+}: PolicyListProps) => {
   const [filteredPolicies, setFilteredPolicies] =
     useState<PolicyView[]>(policies);
   const [selectedUsernames, setSelectedUsernames] = useState<string[]>(["All"]);
@@ -143,7 +160,20 @@ export const PolicyList = ({ policies }: PolicyListProps) => {
         </Flex>
       </Flex>
 
-      {filteredPolicies.length > 0 ? (
+      {isError ? (
+        <Alert status="error" borderRadius="md">
+          <AlertIcon />
+          <Text fontSize="14px">
+            Could not load policies from the server. It will be retried
+            automatically — check that the backend is running if this
+            persists.
+          </Text>
+        </Alert>
+      ) : isLoading ? (
+        <Box height="100px" display="grid" placeItems="center">
+          <Spinner size="md" color="gray.400" />
+        </Box>
+      ) : filteredPolicies.length > 0 ? (
         filteredPolicies.map((policy) => (
           <PolicyRow key={policy.name} policy={policy} />
         ))

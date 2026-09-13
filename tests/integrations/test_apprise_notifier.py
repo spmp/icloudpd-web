@@ -33,3 +33,15 @@ def test_notify_error_never_raises() -> None:
         cls.return_value = inst
         n = AppriseNotifier(settings)
         n.emit("failure", policy_name="p", summary="boom")  # must not raise
+
+
+def test_emit_mfa_required_toggle() -> None:
+    with patch("icloudpd_web.integrations.apprise_notifier.apprise.Apprise") as cls:
+        inst = MagicMock()
+        cls.return_value = inst
+        n = AppriseNotifier(AppriseSettings(urls=["mailto://x"], on_mfa_required=True))
+        n.emit("mfa_required", policy_name="p", summary="2FA code needed")
+        assert inst.notify.call_count == 1
+        n.update(AppriseSettings(urls=["mailto://x"], on_mfa_required=False))
+        n.emit("mfa_required", policy_name="p", summary="2FA code needed")
+        assert inst.notify.call_count == 1

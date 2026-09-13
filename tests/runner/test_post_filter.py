@@ -161,7 +161,7 @@ def test_device_make_substring_no_false_positives(tmp_path: Path) -> None:
         assert "Apple" in d.reason
 
 
-def test_device_make_exif_unreadable(tmp_path: Path) -> None:
+def test_device_make_exif_unreadable_fails_open(tmp_path: Path) -> None:
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"fake")
     f = Filters(device_makes=["Apple"])
@@ -170,11 +170,12 @@ def test_device_make_exif_unreadable(tmp_path: Path) -> None:
         side_effect=_make_exif_mock(None, None),
     ):
         d = evaluate(img, f)
-        assert d.kept is False
+        assert d.kept is True
+        assert d.warning is True
         assert "unreadable" in d.reason.lower()
 
 
-def test_device_model_exif_unreadable(tmp_path: Path) -> None:
+def test_device_model_exif_unreadable_fails_open(tmp_path: Path) -> None:
     img = tmp_path / "photo.jpg"
     img.write_bytes(b"fake")
     f = Filters(device_models=["iPhone 15 Pro"])
@@ -183,8 +184,98 @@ def test_device_model_exif_unreadable(tmp_path: Path) -> None:
         side_effect=_make_exif_mock("Apple", None),
     ):
         d = evaluate(img, f)
-        assert d.kept is False
+        assert d.kept is True
+        assert d.warning is True
         assert "unreadable" in d.reason.lower()
+
+
+def test_real_heic_exif_read(tmp_path: Path) -> None:
+    """Real HEIC bytes (written via pillow-heif) must be readable — this is
+    the format nearly every iPhone photo arrives in."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).parent.parent / "fixtures"))
+    from fake_icloudpd import _write_minimal_heic
+
+    img = tmp_path / "photo.heic"
+    _write_minimal_heic(str(img), "Apple", "iPhone 15 Pro")
+    # Sanity: the file must actually be HEIC, not a renamed JPEG.
+    assert img.read_bytes()[4:12] in (b"ftypheic", b"ftypmif1")
+
+    kept = evaluate(img, Filters(device_makes=["Apple"]))
+    assert kept.kept is True
+    assert kept.warning is False
+
+    dropped = evaluate(img, Filters(device_makes=["Samsung"]))
+    assert dropped.kept is False
+
+
+def test_unsupported_raw_fails_open(tmp_path: Path) -> None:
+    """A RAW file Pillow can't open (no plugin) must be KEPT with a warning,
+    never deleted."""
+    raw = tmp_path / "photo.dng"
+    raw.write_bytes(b"\x00" * 64)  # not a valid image in any format
+    d = evaluate(raw, Filters(device_makes=["Apple"]))
+    assert d.kept is True
+    assert d.warning is True
+
+
+# ---------------------------------------------------------------------------
+# exif_fallback="delete": missing/unreadable EXIF treated as non-matching
+# ---------------------------------------------------------------------------
+
+
+def test_exif_fallback_delete_missing_make(tmp_path: Path) -> None:
+    img = tmp_path / "screenshot.png"
+    img.write_bytes(b"fake")
+    f = Filters(device_makes=["Apple"], exif_fallback="delete")
+    with patch(
+        "icloudpd_web.runner.post_filter._read_exif_make_model",
+        side_effect=_make_exif_mock(None, None),
+    ):
+        d = evaluate(img, f)
+        assert d.kept is False
+        assert "exif_fallback=delete" in d.reason
+
+
+def test_exif_fallback_delete_missing_model(tmp_path: Path) -> None:
+    img = tmp_path / "photo.jpg"
+    img.write_bytes(b"fake")
+    f = Filters(device_models=["iPhone 15 Pro"], exif_fallback="delete")
+    with patch(
+        "icloudpd_web.runner.post_filter._read_exif_make_model",
+        side_effect=_make_exif_mock("Apple", None),
+    ):
+        d = evaluate(img, f)
+        assert d.kept is False
+        assert "exif_fallback=delete" in d.reason
+
+
+def test_exif_fallback_delete_readable_exif_still_matches(tmp_path: Path) -> None:
+    """The fallback only fires on missing EXIF; readable EXIF matches as usual."""
+    img = tmp_path / "photo.jpg"
+    img.write_bytes(b"fake")
+    f = Filters(device_makes=["Apple"], exif_fallback="delete")
+    with patch(
+        "icloudpd_web.runner.post_filter._read_exif_make_model",
+        side_effect=_make_exif_mock("Apple", "iPhone 15"),
+    ):
+        assert evaluate(img, f).kept is True
+
+
+def test_exif_fallback_delete_ignores_non_images() -> None:
+    """Videos never carry EXIF; the fallback must not delete them."""
+    f = Filters(device_makes=["Apple"], exif_fallback="delete")
+    assert evaluate(_path("video.mp4"), f).kept is True
+
+
+def test_exif_fallback_default_is_keep() -> None:
+    assert Filters().exif_fallback == "keep"
+
+
+def test_exif_fallback_invalid_value_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Filters(exif_fallback="nuke")  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

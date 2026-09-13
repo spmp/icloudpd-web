@@ -10,7 +10,7 @@ from icloudpd_web.config import AppriseSettings
 
 log = logging.getLogger(__name__)
 
-Event = Literal["start", "success", "failure"]
+Event = Literal["start", "success", "failure", "mfa_required"]
 
 
 class AppriseNotifier:
@@ -39,6 +39,8 @@ class AppriseNotifier:
             return self._settings.on_success
         if event == "failure":
             return self._settings.on_failure
+        if event == "mfa_required":
+            return self._settings.on_mfa_required
         return False
 
     def emit(self, event: Event, *, policy_name: str, summary: str) -> None:

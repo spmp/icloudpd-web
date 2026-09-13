@@ -40,8 +40,9 @@ FROM python:3.13-slim
 
 ARG VERSION
 
+# curl is used by HEALTHCHECK; gosu drops root -> appuser in the entrypoint.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl \
+ && apt-get install -y --no-install-recommends curl gosu \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -69,11 +70,15 @@ RUN python -c "import site; print(site.getsitepackages()[0])" > /tmp/site-packag
 COPY docker-entrypoint.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
+# Non-root user. Data lives under /data (mounted volume); downloads under
+# /downloads (user-mounted). Both directories are pre-created and chown'd
+# so a simple `-v host:/data` works without host-side `chown` gymnastics.
+# The container starts as root: the entrypoint remaps appuser to PUID/PGID,
+# chowns the mount points, then drops privileges via gosu.
 RUN useradd -m -u 1000 appuser \
  && mkdir -p /data /downloads /.pyicloud \
  && chown -R appuser:appuser /data /downloads /.pyicloud
 
-USER appuser
 WORKDIR /home/appuser
 
 VOLUME ["/data", "/downloads", "/.pyicloud"]

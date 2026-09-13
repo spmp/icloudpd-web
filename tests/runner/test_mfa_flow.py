@@ -68,10 +68,12 @@ async def test_mfa_flow_delivers_code_via_stdin(
         timeout=10,
     )
 
-    assert callback_called_with == ["p"], "on_mfa_needed must be called with policy_name"
+    # Exactly one trigger: the post-success banner ("...the two-factor
+    # authentication expires.") must NOT re-trigger the MFA prompt.
+    assert callback_called_with == ["p"], "on_mfa_needed must be called exactly once"
     assert run.status == "success", f"Expected success, got {run.status}"
     log_text = run.log_path.read_text()
-    assert "Received MFA code of length 6" in log_text
+    assert "the two-factor authentication expires." in log_text
 
 
 @pytest.mark.asyncio
@@ -123,24 +125,25 @@ async def test_mfa_flow_awaiting_mfa_status_event(
     )
 
     assert "awaiting_mfa" in status_events, f"Expected awaiting_mfa in {status_events}"
+    # After the code is written to stdin the run must transition back to
+    # "running" (so the UI can close the modal), then end with success.
+    i = status_events.index("awaiting_mfa")
+    assert status_events[i + 1 :] == ["running", "success"], (
+        f"Expected awaiting_mfa → running → success, got {status_events}"
+    )
     assert run.status == "success"
 
 
 @pytest.mark.asyncio
-async def test_mfa_flow_handles_reprompt_after_rejection(
+async def test_mfa_flow_rejected_code_fails_run(
     tmp_path: Path,
     fake_icloudpd_cmd: list[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """If icloudpd rejects the first code and re-prompts, Run must:
-
-    1. Call on_mfa_needed a second time (fresh slot).
-    2. Forward the second code via stdin.
-    3. Complete successfully.
-
-    This exercises the re-entrancy guard in _trigger_mfa.
-    """
-    monkeypatch.setenv("FAKE_ICLOUDPD_MODE", "mfa_reprompt")
+    """Real icloudpd 1.32.3 EXITS with code 1 on a rejected code (no console
+    re-prompt). The run must end failed — and must NOT re-open an MFA prompt
+    off the rejection error line."""
+    monkeypatch.setenv("FAKE_ICLOUDPD_MODE", "mfa_reject")
     monkeypatch.setenv("FAKE_ICLOUDPD_TOTAL", "1")
 
     slots: list[Path] = []
@@ -151,7 +154,7 @@ async def test_mfa_flow_handles_reprompt_after_rejection(
         return slot
 
     run = Run(
-        run_id="test-mfa-reprompt",
+        run_id="test-mfa-reject",
         policy_name="p",
         argv=_argv(fake_icloudpd_cmd),
         log_dir=tmp_path,
@@ -160,30 +163,23 @@ async def test_mfa_flow_handles_reprompt_after_rejection(
     )
     await run.start()
 
-    async def provide_two_codes() -> None:
-        # Wait for first slot, write bad code.
+    async def provide_bad_code() -> None:
         for _ in range(100):
             await asyncio.sleep(0.05)
-            if len(slots) >= 1:
+            if slots:
                 slots[0].write_text("111111\n")
-                break
-        # Wait for second slot (triggered by the second prompt), write good code.
-        for _ in range(100):
-            await asyncio.sleep(0.05)
-            if len(slots) >= 2:
-                slots[1].write_text("222222\n")
                 break
 
     await asyncio.wait_for(
-        asyncio.gather(run.wait(), provide_two_codes()),
+        asyncio.gather(run.wait(), provide_bad_code()),
         timeout=15,
     )
 
-    assert len(slots) == 2, f"Expected two on_mfa_needed calls, got {len(slots)}"
-    assert run.status == "success"
+    assert len(slots) == 1, f"Expected one on_mfa_needed call, got {len(slots)}"
+    assert run.status == "failed"
+    assert run.exit_code == 1
     log_text = run.log_path.read_text()
-    assert "First code rejected" in log_text
-    assert "Received MFA code of length 6" in log_text
+    assert "Failed to verify two-factor authentication code" in log_text
 
 
 @pytest.mark.asyncio
@@ -225,3 +221,106 @@ async def test_mfa_flow_stop_during_awaiting_mfa(
     assert run.status == "stopped"
     # Slot file must NOT have been written — user cancelled instead of submitting.
     assert not slot_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_mfa_flow_times_out_without_code(
+    tmp_path: Path,
+    fake_icloudpd_cmd: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If no 2FA code arrives within mfa_timeout, the run must fail with a
+    distinct failure_reason instead of holding the policy slot forever."""
+    monkeypatch.setenv("FAKE_ICLOUDPD_MODE", "mfa")
+    monkeypatch.setenv("FAKE_ICLOUDPD_TOTAL", "1")
+
+    slot_path = tmp_path / "p.code"
+
+    run = Run(
+        run_id="test-mfa-timeout",
+        policy_name="p",
+        argv=_argv(fake_icloudpd_cmd),
+        log_dir=tmp_path,
+        password="pw",
+        on_mfa_needed=lambda _name: slot_path,
+        mfa_timeout=0.3,
+    )
+    await run.start()
+    await asyncio.wait_for(run.wait(), timeout=10)
+
+    assert run.status == "failed"
+    assert run.failure_reason == "mfa_timeout"
+    log_text = run.log_path.read_text()
+    assert "2FA code not provided within" in log_text
+    # Sidecar must carry the reason for the UI/history.
+    import json
+
+    meta = json.loads(run.log_path.with_suffix(".meta.json").read_text())
+    assert meta["failure_reason"] == "mfa_timeout"
+
+
+@pytest.mark.asyncio
+async def test_mfa_flow_rejected_code_sets_failure_reason(
+    tmp_path: Path,
+    fake_icloudpd_cmd: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The rejection line maps to a distinct mfa_rejected failure the UI explains."""
+    monkeypatch.setenv("FAKE_ICLOUDPD_MODE", "mfa_reject")
+
+    slot_path = tmp_path / "p.code"
+
+    run = Run(
+        run_id="test-mfa-reject-reason",
+        policy_name="p",
+        argv=_argv(fake_icloudpd_cmd),
+        log_dir=tmp_path,
+        password="pw",
+        on_mfa_needed=lambda _name: slot_path,
+    )
+    await run.start()
+
+    async def provide_bad_code() -> None:
+        for _ in range(100):
+            await asyncio.sleep(0.05)
+            if run.status == "running" and not slot_path.exists():
+                break
+        slot_path.write_text("111111\n")
+
+    await asyncio.wait_for(asyncio.gather(run.wait(), provide_bad_code()), timeout=15)
+
+    assert run.status == "failed"
+    assert run.failure_reason == "mfa_rejected"
+
+
+@pytest.mark.asyncio
+async def test_mfa_flow_2sa_prompt_is_unsupported(
+    tmp_path: Path,
+    fake_icloudpd_cmd: list[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The legacy 2sa device-index prompt must stop the run with a clear
+    error instead of opening the code modal (which could never answer it)."""
+    monkeypatch.setenv("FAKE_ICLOUDPD_MODE", "mfa_2sa")
+
+    prompts: list[str] = []
+
+    def on_mfa_needed(policy_name: str) -> Path:
+        prompts.append(policy_name)
+        return tmp_path / "p.code"
+
+    run = Run(
+        run_id="test-mfa-2sa",
+        policy_name="p",
+        argv=_argv(fake_icloudpd_cmd),
+        log_dir=tmp_path,
+        password="pw",
+        on_mfa_needed=on_mfa_needed,
+    )
+    await run.start()
+    await asyncio.wait_for(run.wait(), timeout=15)
+
+    assert prompts == [], "2sa must not open the MFA code modal"
+    assert run.status == "failed"
+    assert run.failure_reason == "mfa_2sa_unsupported"
+    assert "does not support" in run.log_path.read_text()

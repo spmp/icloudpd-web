@@ -86,13 +86,20 @@ def test_filters_do_not_leak_into_build_argv() -> None:
     """Confirm that policy.filters fields are NOT emitted as CLI flags."""
     from icloudpd_web.store.models import Filters
 
+    # Filters + iCloud-side deletion is rejected at validation, so strip the
+    # deletion keys for this argv-shape check.
+    config = {
+        k: v
+        for k, v in REPRESENTATIVE_ICLOUDPD_CONFIG.items()
+        if k not in ("delete_after_download", "keep_icloud_recent_days")
+    }
     policy = Policy(
         name="p",
         username="u@icloud.com",
         directory="/tmp/p",
         cron="0 * * * *",
         enabled=True,
-        icloudpd=REPRESENTATIVE_ICLOUDPD_CONFIG,
+        icloudpd=config,
         filters=Filters(
             file_suffixes=[".heic"],
             match_patterns=["^IMG_"],

@@ -3,10 +3,13 @@ import type { Policy, PolicyView } from "@/types/api";
 
 export const policiesApi = {
   list: () => apiFetch<PolicyView[]>("/policies"),
-  upsert: (name: string, policy: Policy) =>
+  upsert: (name: string, policy: Policy, opts?: { createOnly?: boolean }) =>
     apiFetch<PolicyView>(`/policies/${encodeURIComponent(name)}`, {
       method: "PUT",
       body: policy,
+      // Create-only: the server rejects with 409 instead of silently
+      // overwriting an existing policy with the same name.
+      headers: opts?.createOnly ? { "If-None-Match": "*" } : undefined,
     }),
   remove: (name: string) =>
     apiFetch<void>(`/policies/${encodeURIComponent(name)}`, { method: "DELETE" }),

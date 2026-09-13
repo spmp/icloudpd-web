@@ -13,6 +13,9 @@ class FilterDecision:
     path: Path
     kept: bool
     reason: str
+    # True when the file was kept only because its EXIF could not be read
+    # (fail-open); callers should surface this as a warning.
+    warning: bool = False
 
 
 _IMAGE_SUFFIXES: frozenset[str] = frozenset(
@@ -33,10 +36,26 @@ _IMAGE_SUFFIXES: frozenset[str] = frozenset(
 )
 
 
+_heif_registered = False
+
+
+def _ensure_heif_opener() -> None:
+    """Register pillow-heif so PIL can open .heic/.heif files."""
+    global _heif_registered  # noqa: PLW0603
+    if _heif_registered:
+        return
+    _heif_registered = True
+    from pillow_heif import register_heif_opener
+
+    register_heif_opener()
+
+
 def _read_exif_make_model(path: Path) -> tuple[str | None, str | None]:
     """Return (Make, Model) from EXIF, or (None, None) if unreadable."""
     try:
         from PIL import ExifTags, Image
+
+        _ensure_heif_opener()
 
         with Image.open(path) as img:
             exif = img.getexif()
@@ -65,11 +84,21 @@ def _check_exif(path: Path, filters: Filters) -> FilterDecision | None:
 
     make, model = _read_exif_make_model(path)
 
+    # Missing/unreadable EXIF (screenshots, web saves, formats Pillow can't
+    # parse) is governed by exif_fallback: "keep" fails open with a warning
+    # (default), "delete" treats no-device-info as non-matching. TIFF-based
+    # RAW (.dng/.cr2/.nef/.arw) headers are usually readable via Pillow's
+    # TIFF plugin, so real camera photos rarely land in this branch.
     if filters.device_makes:
         wanted_makes = [x.strip().lower() for x in filters.device_makes if x.strip()]
         if make is None:
+            if filters.exif_fallback == "delete":
+                return FilterDecision(path, False, "no readable EXIF Make (exif_fallback=delete)")
             return FilterDecision(
-                path, False, "EXIF Make unreadable; device_makes filter configured"
+                path,
+                True,
+                "EXIF Make unreadable; keeping file (device_makes filter not applied)",
+                warning=True,
             )
         make_lc = make.lower()
         if not any(w in make_lc for w in wanted_makes):
@@ -80,8 +109,13 @@ def _check_exif(path: Path, filters: Filters) -> FilterDecision | None:
     if filters.device_models:
         wanted_models = [x.strip().lower() for x in filters.device_models if x.strip()]
         if model is None:
+            if filters.exif_fallback == "delete":
+                return FilterDecision(path, False, "no readable EXIF Model (exif_fallback=delete)")
             return FilterDecision(
-                path, False, "EXIF Model unreadable; device_models filter configured"
+                path,
+                True,
+                "EXIF Model unreadable; keeping file (device_models filter not applied)",
+                warning=True,
             )
         model_lc = model.lower()
         if not any(w in model_lc for w in wanted_models):
@@ -98,7 +132,9 @@ def evaluate(path: Path, filters: Filters) -> FilterDecision:
     AND across fields, OR within a field.
     - file_suffixes: case-insensitive extension match.
     - match_patterns: regex applied to basename; any match passes.
-    - device_makes / device_models: EXIF Make/Model; fail-closed on unreadable EXIF.
+    - device_makes / device_models: EXIF Make/Model. Missing/unreadable EXIF
+      follows filters.exif_fallback: "keep" fails open (file kept, decision
+      flagged as warning), "delete" treats it as non-matching.
       Non-image files (videos, etc.) skip EXIF filters entirely.
     """
     suffix = path.suffix.lower()

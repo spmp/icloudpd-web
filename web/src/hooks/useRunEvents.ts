@@ -7,6 +7,7 @@ import type { RunStatus } from "@/types/api";
 interface StatusPayload {
   status: RunStatus;
   error_id?: string | null;
+  failure_reason?: string | null;
 }
 
 interface ProgressPayload {
@@ -39,7 +40,12 @@ export function useRunEvents(runId: string | null, policyName: string | null) {
       },
       status: (data) => {
         const payload = data as StatusPayload;
-        setStatus(runId, payload.status, payload.error_id ?? null);
+        setStatus(
+          runId,
+          payload.status,
+          payload.error_id ?? null,
+          payload.failure_reason ?? null,
+        );
         if (payload.status !== "running" && payload.status !== "awaiting_mfa") {
           qc.invalidateQueries({ queryKey: ["policies"] });
           qc.invalidateQueries({ queryKey: ["runs", "history", policyName] });
