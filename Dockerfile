@@ -2,6 +2,7 @@
 # only the custom icloudpd fork is cloned from GitHub.
 #
 # Build args default to the currently required plugin-support branches.
+ARG VERSION=2026.4.20.post1
 
 # Build icloudpd wheel from GitHub.
 FROM python:3.13-slim AS icloudpd-builder
@@ -21,6 +22,9 @@ RUN pip install --no-cache-dir build \
 
 # Build the React frontend from this checkout.
 FROM node:20-slim AS frontend-builder
+
+ARG VERSION
+ENV VITE_APP_VERSION=${VERSION}
 
 WORKDIR /project
 

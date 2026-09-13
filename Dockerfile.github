@@ -16,6 +16,8 @@
 #     -f Dockerfile.standalone -t icloudpd-web .
 
 # ── Stage 1: clone icloudpd-web source ───────────────────────────────────────
+ARG VERSION=2026.4.20.post1
+
 FROM alpine/git AS web-source
 
 ARG ICLOUDPD_WEB_REPO
@@ -41,6 +43,9 @@ RUN pip install --no-cache-dir build \
 
 # ── Stage 3: build the React frontend ────────────────────────────────────────
 FROM node:20-slim AS frontend-builder
+
+ARG VERSION
+ENV VITE_APP_VERSION=${VERSION}
 
 WORKDIR /project
 
