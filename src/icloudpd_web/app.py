@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
 
+from icloudpd_web import __version__
 from icloudpd_web.api import auth as auth_router
 from icloudpd_web.api import mfa as mfa_router
 from icloudpd_web.api import policies as policies_router
@@ -63,6 +65,13 @@ def create_app(
     static_dir: Path | None = None,
 ) -> FastAPI:
     app = FastAPI(title="icloudpd-web", lifespan=_lifespan)
+
+    @app.get("/version")
+    def version() -> dict[str, str]:
+        return {
+            "version": os.environ.get("ICLOUDPD_WEB_VERSION", __version__),
+        }
+
     if icloudpd_argv is None:
         icloudpd_argv = _make_icloudpd_argv(cookie_dir)
 

@@ -38,6 +38,8 @@ RUN cd web && npm run build
 # Runtime image.
 FROM python:3.13-slim
 
+ARG VERSION
+
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/*
@@ -81,7 +83,8 @@ EXPOSE 5000
 ENV HOST=0.0.0.0 \
     PORT=5000 \
     DATA_DIR=/data \
-    ICLOUDPD_COOKIE_DIR=/.pyicloud
+    ICLOUDPD_COOKIE_DIR=/.pyicloud \
+    ICLOUDPD_WEB_VERSION=${VERSION}
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -fsS "http://127.0.0.1:${PORT}/auth/status" >/dev/null || exit 1
