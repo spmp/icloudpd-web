@@ -19,6 +19,7 @@ ALLOWED_ICLOUDPD_KEYS: frozenset[str] = frozenset(
     {
         "album",
         "size",
+        "size_video",
         "immich_stack_video",
         "immich_favorite_video",
         "skip_videos",

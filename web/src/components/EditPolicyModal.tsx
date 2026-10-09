@@ -43,6 +43,7 @@ import {
   FieldWithInfo,
   AlbumField,
   DownloadSizesField,
+  VideoSizesField,
   IntegrationField,
   PluginsField,
   PostDownloadFiltersSection,
@@ -489,6 +490,20 @@ export function EditPolicyModal({
                         | "adjusted"
                         | "alternative"
                       )[]
+                    )
+                  }
+                />
+
+                <VideoSizesField
+                  enabled={formData.size_video_enabled}
+                  onEnabledChange={(value) =>
+                    update("size_video_enabled", value)
+                  }
+                  value={formData.size_video}
+                  onChange={(value) =>
+                    update(
+                      "size_video",
+                      value as ("original" | "medium" | "thumb")[],
                     )
                   }
                 />

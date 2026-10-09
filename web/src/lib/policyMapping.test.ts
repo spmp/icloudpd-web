@@ -82,6 +82,40 @@ describe("fromPolicyView", () => {
     });
   });
 
+  it("maps optional video download sizes", () => {
+    const disabled = toBackendPolicy({
+      ...defaultFormPolicy(),
+      size_video_enabled: false,
+      size_video: ["original", "medium"],
+    });
+    expect("size_video" in disabled.icloudpd).toBe(false);
+
+    const enabled = toBackendPolicy({
+      ...defaultFormPolicy(),
+      size_video_enabled: true,
+      size_video: ["original", "medium", "thumb"],
+    });
+    expect(enabled.icloudpd).toMatchObject({
+      size_video: ["original", "medium", "thumb"],
+    });
+
+    const allByDefault = toBackendPolicy({
+      ...defaultFormPolicy(),
+      size_video_enabled: true,
+      size_video: [],
+    });
+    expect(allByDefault.icloudpd).toMatchObject({
+      size_video: ["original", "medium", "thumb"],
+    });
+
+    const form = fromPolicyView({
+      ...baseView,
+      icloudpd: { size_video: ["medium", "thumb"] },
+    });
+    expect(form.size_video_enabled).toBe(true);
+    expect(form.size_video).toEqual(["medium", "thumb"]);
+  });
+
   it("populates AWS fields when aws present", () => {
     const f = fromPolicyView({
       ...baseView,

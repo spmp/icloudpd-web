@@ -24,6 +24,7 @@ REPRESENTATIVE_ICLOUDPD_CONFIG: dict[str, object] = {
     "domain": "com",
     "folder_structure": "{:%Y/%m/%d}",
     "size": ["original", "medium"],
+    "size_video": ["original", "medium", "thumb"],
     "immich_stack_video": "original,medium",
     "immich_favorite_video": "original",
     "live_photo_size": "original",

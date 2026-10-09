@@ -284,6 +284,79 @@ export function DownloadSizesField({
   );
 }
 
+interface VideoSizesFieldProps {
+  enabled: boolean;
+  onEnabledChange: (value: boolean) => void;
+  value: string[];
+  onChange: (value: string[]) => void;
+}
+
+const AVAILABLE_VIDEO_SIZES = ["original", "medium", "thumb"];
+
+export function VideoSizesField({
+  enabled,
+  onEnabledChange,
+  value,
+  onChange,
+}: VideoSizesFieldProps) {
+  const selectedSizes = value || [];
+  const allSelected =
+    selectedSizes.length === 0 ||
+    AVAILABLE_VIDEO_SIZES.every((size) => selectedSizes.includes(size));
+
+  const handleToggleSize = (size: string) => {
+    if (selectedSizes.includes(size)) {
+      onChange(selectedSizes.filter((selected) => selected !== size));
+    } else {
+      onChange([...selectedSizes, size]);
+    }
+  };
+
+  return (
+    <FormControl>
+      <FieldWithInfo
+        label="Video Download Sizes"
+        info="Override the image download sizes for regular videos. Select all to download original, medium, and thumb video versions; when disabled, videos follow the image download sizes."
+      >
+        <Switch
+          isChecked={enabled}
+          onChange={(e) => onEnabledChange(e.target.checked)}
+        />
+      </FieldWithInfo>
+      {enabled && (
+        <Box pl={10} mt={2}>
+          <Wrap spacing={2}>
+            <WrapItem>
+              <Tag
+                size="md"
+                colorScheme={allSelected ? "blue" : "gray"}
+                borderRadius="full"
+                cursor="pointer"
+                onClick={() => onChange([...AVAILABLE_VIDEO_SIZES])}
+              >
+                <TagLabel>all</TagLabel>
+              </Tag>
+            </WrapItem>
+            {AVAILABLE_VIDEO_SIZES.map((size) => (
+              <WrapItem key={size}>
+                <Tag
+                  size="md"
+                  colorScheme={selectedSizes.includes(size) ? "blue" : "gray"}
+                  borderRadius="full"
+                  cursor="pointer"
+                  onClick={() => handleToggleSize(size)}
+                >
+                  <TagLabel>{size}</TagLabel>
+                </Tag>
+              </WrapItem>
+            ))}
+          </Wrap>
+        </Box>
+      )}
+    </FormControl>
+  );
+}
+
 export interface PostDownloadFilterValues {
   filter_file_suffixes: string[];
   filter_match_patterns: string[];

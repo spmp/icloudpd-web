@@ -16,6 +16,8 @@ const NON_ICLOUDPD_OLD_FIELDS = new Set([
   "scheduled",
   "waiting_mfa",
   "upload_to_aws_s3",
+  "size_video_enabled",
+  "size_video",
   // Immich optional-value flag UI helpers — handled manually in toBackendPolicy
   "immich_stack_media_enabled",
   "immich_stack_media",
@@ -65,6 +67,8 @@ export interface FormPolicy extends OldPolicy {
   filter_match_patterns: string[];
   filter_device_makes: string[];
   filter_device_models: string[];
+  size_video_enabled: boolean;
+  size_video: Array<"original" | "medium" | "thumb">;
   // Immich optional-value flags: stored as bool|string in backend, split into
   // an _enabled toggle + a sizes string in the UI for clarity.
   immich_stack_media_enabled: boolean;
@@ -92,6 +96,8 @@ export function defaultFormPolicy(): FormPolicy {
     domain: "com",
     folder_structure: "none",
     size: ["original"],
+    size_video_enabled: false,
+    size_video: [],
     live_photo_size: "original",
     force_size: false,
     align_raw: "original",
@@ -190,6 +196,11 @@ export function fromPolicyView(view: PolicyView): FormPolicy {
     filter_match_patterns: view.filters?.match_patterns ?? [],
     filter_device_makes: view.filters?.device_makes ?? [],
     filter_device_models: view.filters?.device_models ?? [],
+    size_video_enabled:
+      Array.isArray(icloudpd.size_video) && icloudpd.size_video.length > 0,
+    size_video: Array.isArray(icloudpd.size_video)
+      ? (icloudpd.size_video as ("original" | "medium" | "thumb")[])
+      : [],
     // Optional-value immich flags: backend stores bool|string, UI splits into toggle + sizes array
     immich_stack_media_enabled: !!icloudpd.immich_stack_media,
     immich_stack_media: typeof icloudpd.immich_stack_media === "string"
@@ -228,6 +239,11 @@ export function toBackendPolicy(form: FormPolicy): BackendPolicy {
   // it to a real icloudpd identifier at run time. Never include `library` in
   // the icloudpd dict — the backend validator strips it anyway.
   delete icloudpd.library;
+  if (form.size_video_enabled) {
+    icloudpd.size_video = form.size_video.length > 0
+      ? form.size_video
+      : ["original", "medium", "thumb"];
+  }
   // Optional-value flags: enabled+no sizes → bool true (flag with no arg = "all"),
   // enabled+sizes → comma-separated string, disabled → omit.
   if (form.immich_stack_media_enabled) {

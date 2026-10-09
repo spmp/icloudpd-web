@@ -14,6 +14,7 @@ export interface Policy {
   // Download options
   folder_structure: string;
   size: Array<"original" | "medium" | "thumb" | "adjusted" | "alternative">;
+  size_video: Array<"original" | "medium" | "thumb">;
   live_photo_size: "original" | "medium" | "thumb";
   force_size: boolean;
   align_raw: "original" | "alternative" | "as-is";
