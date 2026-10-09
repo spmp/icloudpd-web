@@ -21,6 +21,10 @@ const NON_ICLOUDPD_OLD_FIELDS = new Set([
   "immich_stack_media",
   "immich_favorite_enabled",
   "immich_favorite",
+  "immich_stack_video_enabled",
+  "immich_stack_video",
+  "immich_favorite_video_enabled",
+  "immich_favorite_video",
   "associate_live_enabled",
   "associate_live_with_extra_sizes",
 ]);
@@ -67,6 +71,10 @@ export interface FormPolicy extends OldPolicy {
   immich_stack_media: string[];
   immich_favorite_enabled: boolean;
   immich_favorite: string[];
+  immich_stack_video_enabled: boolean;
+  immich_stack_video: string[];
+  immich_favorite_video_enabled: boolean;
+  immich_favorite_video: string[];
   associate_live_enabled: boolean;
   associate_live_with_extra_sizes: string[];
   filter_exif_fallback: "keep" | "delete";
@@ -145,6 +153,10 @@ export function defaultFormPolicy(): FormPolicy {
     immich_stack_media: [],
     immich_favorite_enabled: false,
     immich_favorite: [],
+    immich_stack_video_enabled: false,
+    immich_stack_video: [],
+    immich_favorite_video_enabled: false,
+    immich_favorite_video: [],
     associate_live_enabled: false,
     associate_live_with_extra_sizes: [],
     filter_exif_fallback: "keep",
@@ -187,6 +199,14 @@ export function fromPolicyView(view: PolicyView): FormPolicy {
     immich_favorite: typeof icloudpd.immich_favorite === "string"
       ? icloudpd.immich_favorite.split(",").filter(Boolean)
       : [],
+    immich_stack_video_enabled: !!icloudpd.immich_stack_video,
+    immich_stack_video: typeof icloudpd.immich_stack_video === "string"
+      ? icloudpd.immich_stack_video.split(",").filter(Boolean)
+      : [],
+    immich_favorite_video_enabled: !!icloudpd.immich_favorite_video,
+    immich_favorite_video: typeof icloudpd.immich_favorite_video === "string"
+      ? icloudpd.immich_favorite_video.split(",").filter(Boolean)
+      : [],
     associate_live_enabled: !!icloudpd.associate_live_with_extra_sizes,
     associate_live_with_extra_sizes: typeof icloudpd.associate_live_with_extra_sizes === "string"
       ? icloudpd.associate_live_with_extra_sizes.split(",").filter(Boolean)
@@ -218,6 +238,16 @@ export function toBackendPolicy(form: FormPolicy): BackendPolicy {
   if (form.immich_favorite_enabled) {
     icloudpd.immich_favorite = form.immich_favorite.length > 0
       ? form.immich_favorite.join(",")
+      : true;
+  }
+  if (form.immich_stack_video_enabled) {
+    icloudpd.immich_stack_video = form.immich_stack_video.length > 0
+      ? form.immich_stack_video.join(",")
+      : true;
+  }
+  if (form.immich_favorite_video_enabled) {
+    icloudpd.immich_favorite_video = form.immich_favorite_video.length > 0
+      ? form.immich_favorite_video.join(",")
       : true;
   }
   if (form.associate_live_enabled) {

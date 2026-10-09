@@ -76,6 +76,10 @@ export interface ImmichSectionValues {
   immich_stack_media: string[];
   immich_favorite_enabled: boolean;
   immich_favorite: string[];
+  immich_stack_video_enabled: boolean;
+  immich_stack_video: string[];
+  immich_favorite_video_enabled: boolean;
+  immich_favorite_video: string[];
   immich_album: string[];
   associate_live_enabled: boolean;
   associate_live_with_extra_sizes: string[];
@@ -223,6 +227,26 @@ function ImmichConfigSection({ values, onChange }: PluginSectionProps) {
         onEnabledChange={(val) => onChange("immich_favorite_enabled", val)}
         selectedSizes={v.immich_favorite}
         onSizesChange={(sizes) => onChange("immich_favorite", sizes)}
+        availableSizes={downloadSizes}
+      />
+
+      <ImmichSizeSelector
+        label="Stack Video"
+        info="Stack regular video size variants together in Immich. 'all' stacks every downloaded video size. Select specific sizes to control which are stacked and their order."
+        enabled={v.immich_stack_video_enabled}
+        onEnabledChange={(val) => onChange("immich_stack_video_enabled", val)}
+        selectedSizes={v.immich_stack_video}
+        onSizesChange={(sizes) => onChange("immich_stack_video", sizes)}
+        availableSizes={downloadSizes}
+      />
+
+      <ImmichSizeSelector
+        label="Mark Video Favourites"
+        info="Sync iCloud favourites for regular videos to Immich. 'all' marks every downloaded video size. Select specific sizes to mark only those as favourites."
+        enabled={v.immich_favorite_video_enabled}
+        onEnabledChange={(val) => onChange("immich_favorite_video_enabled", val)}
+        selectedSizes={v.immich_favorite_video}
+        onSizesChange={(sizes) => onChange("immich_favorite_video", sizes)}
         availableSizes={downloadSizes}
       />
 

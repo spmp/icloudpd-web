@@ -55,6 +55,33 @@ describe("fromPolicyView", () => {
     expect(f.size).toEqual(["medium"]);
   });
 
+  it("maps Immich video stack and favourite options", () => {
+    const f = fromPolicyView({
+      ...baseView,
+      icloudpd: {
+        immich_stack_video: "original,medium",
+        immich_favorite_video: true,
+      },
+    });
+
+    expect(f.immich_stack_video_enabled).toBe(true);
+    expect(f.immich_stack_video).toEqual(["original", "medium"]);
+    expect(f.immich_favorite_video_enabled).toBe(true);
+    expect(f.immich_favorite_video).toEqual([]);
+
+    const out = toBackendPolicy({
+      ...f,
+      immich_stack_video_enabled: true,
+      immich_stack_video: ["original", "medium"],
+      immich_favorite_video_enabled: true,
+      immich_favorite_video: [],
+    });
+    expect(out.icloudpd).toMatchObject({
+      immich_stack_video: "original,medium",
+      immich_favorite_video: true,
+    });
+  });
+
   it("populates AWS fields when aws present", () => {
     const f = fromPolicyView({
       ...baseView,
